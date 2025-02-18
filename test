@@ -1,0 +1,80 @@
+GET your_index/_search
+{
+  "size": 0,
+  "query": {
+    "bool": {
+      "must": [
+        { "term": { "read-status": "false" } }, // Filter by read-status=false
+        { "wildcard": { "url.path": "/documents/customers/*/count" } } // Match URL pattern
+      ]
+    }
+  },
+  "aggs": {
+    "unique_customers": {
+      "terms": {
+        "field": "customer_id.keyword", // Group by customer_id (must be a keyword field)
+        "size": 10000
+      },
+      "aggs": {
+        "status": {
+          "filters": {
+            "filters": {
+              "OnlyActive": {
+                "bool": {
+                  "must": [
+                    { "term": { "hasInForcePolicy": "Yes" } },
+                    { "term": { "hasEligibleOutOfForcePolicy": "No" } }
+                  ]
+                }
+              },
+              "Active&OOF": {
+                "bool": {
+                  "must": [
+                    { "term": { "hasInForcePolicy": "Yes" } },
+                    { "term": { "hasEligibleOutOfForcePolicy": "Yes" } }
+                  ]
+                }
+              },
+              "NotActive&OOF": {
+                "bool": {
+                  "must": [
+                    { "term": { "hasInForcePolicy": "No" } },
+                    { "term": { "hasEligibleOutOfForcePolicy": "Yes" } }
+                  ]
+                }
+              },
+              "NotActive&NotOOF": {
+                "bool": {
+                  "must": [
+                    { "term": { "hasInForcePolicy": "No" } },
+                    { "term": { "hasEligibleOutOfForcePolicy": "No" } }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "total_OnlyActive": {
+      "sum_bucket": {
+        "buckets_path": "unique_customers>status['OnlyActive']._count"
+      }
+    },
+    "total_ActiveOOF": {
+      "sum_bucket": {
+        "buckets_path": "unique_customers>status['Active&OOF']._count"
+      }
+    },
+    "total_NotActiveOOF": {
+      "sum_bucket": {
+        "buckets_path": "unique_customers>status['NotActive&OOF']._count"
+      }
+    },
+    "total_NotActiveNotOOF": {
+      "sum_bucket": {
+        "buckets_path": "unique_customers>status['NotActive&NotOOF']._count"
+      }
+    }
+  }
+}
