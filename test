@@ -1,66 +1,69 @@
-{
-  "size": 10000,  
-  "_source": ["@timestamp", "access_referrer.keyword"],  
-  "query": {
-    "bool": {
-      "must": [
-        { "exists": { "field": "access_referrer.keyword" } },
+
+  {
+  "aggregations": {
+    "unique_customers": {
+      "buckets": [
         {
-          "bool": {
-            "should": [
-              { "wildcard": { "access_referrer.keyword": "*hasInForcePolicy=Yes*" } },
-              { "wildcard": { "access_referrer.keyword": "*hasInForcePolicy=No*" } },
-              { "wildcard": { "access_referrer.keyword": "*hasEligibleOutOfForcePolicy=Yes*" } },
-              { "wildcard": { "access_referrer.keyword": "*hasEligibleOutOfForcePolicy=No*" } }
-            ],
-            "minimum_should_match": 1
+          "key": "/documents/customers/1910c4a6-c6dd-4759-a5f2-6b6da40c188a/count",
+          "doc_count": 1,
+          "unique_customer_id": {
+            "value": "1910c4a6-c6dd-4759-a5f2-6b6da40c188a"
+          },
+          "status_bucket": {
+            "buckets": [
+              {
+                "key": "OnlyActive",
+                "doc_count": 1
+              }
+            ]
+          }
+        },
+        {
+          "key": "/documents/customers/303b4dab-120b-4a81-bfe0-ca525d90d4f1/count",
+          "doc_count": 1,
+          "unique_customer_id": {
+            "value": "303b4dab-120b-4a81-bfe0-ca525d90d4f1"
+          },
+          "status_bucket": {
+            "buckets": [
+              {
+                "key": "OnlyActive",
+                "doc_count": 1
+              }
+            ]
+          }
+        },
+        {
+          "key": "/documents/customers/4ddbeb73-6515-496d-91d3-0d10c748d56e/count",
+          "doc_count": 1,
+          "unique_customer_id": {
+            "value": "4ddbeb73-6515-496d-91d3-0d10c748d56e"
+          },
+          "status_bucket": {
+            "buckets": [
+              {
+                "key": "Active&OOF",
+                "doc_count": 1
+              }
+            ]
+          }
+        },
+        {
+          "key": "/documents/customers/abeb9720-1da9-4c5d-aec9-362515189c58/count",
+          "doc_count": 1,
+          "unique_customer_id": {
+            "value": "abeb9720-1da9-4c5d-aec9-362515189c58"
+          },
+          "status_bucket": {
+            "buckets": [
+              {
+                "key": "NotActive&OOF",
+                "doc_count": 1
+              }
+            ]
           }
         }
       ]
-    }
-  },
-  "script_fields": {
-    "date": {
-      "script": {
-        "source": "ZonedDateTime.ofInstant(Instant.ofEpochMilli(doc['@timestamp'].value.millis), ZoneId.of('UTC')).format(DateTimeFormatter.ofPattern('dd/MM/yyyy'))",
-        "lang": "painless"
-      }
-    },
-    "customer_id": {
-      "script": {
-        "source": """
-          if (doc.containsKey('access_referrer.keyword')) {
-            String ref = doc['access_referrer.keyword'].value;
-            int start = ref.indexOf('/documents/customers/') + 21;
-            int end = ref.indexOf('/count', start);
-            if (start > 20 && end > start) {
-              return ref.substring(start, end);
-            }
-          }
-          return null;
-        """,
-        "lang": "painless"
-      }
-    },
-    "status": {
-      "script": {
-        "source": """
-          String ref = doc['access_referrer.keyword'].value;
-          boolean hasActive = ref.contains("hasInForcePolicy=Yes");
-          boolean hasOOF = ref.contains("hasEligibleOutOfForcePolicy=Yes");
-
-          if (hasActive && hasOOF) {
-            return "Active&OOF";
-          } else if (hasActive) {
-            return "OnlyActive";
-          } else if (hasOOF) {
-            return "NotActive&OOF";
-          } else {
-            return "NotActive&NotOOF";
-          }
-        """,
-        "lang": "painless"
-      }
     }
   }
 }
