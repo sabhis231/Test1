@@ -1,0 +1,33 @@
+GET your-index/_search
+{
+  "size": 0,
+  "aggs": {
+    "unique_customers": {
+      "terms": {
+        "script": """
+          def match = /customers\\/([a-z0-9\\-]+)\\//.matcher(doc['access_referrer.keyword'].value);
+          if (match.find()) {
+            return match.group(1);
+          } else {
+            return "unknown";
+          }
+        """,
+        "size": 10000
+      },
+      "aggs": {
+        "status_bucket": {
+          "terms": {
+            "script": """
+              def ref = doc['access_referrer.keyword'].value;
+              if (ref.contains("hasInForcePolicy=Yes") && ref.contains("hasEligibleOutOfForcePolicy=No")) return "OnlyActive";
+              if (ref.contains("hasInForcePolicy=Yes") && ref.contains("hasEligibleOutOfForcePolicy=Yes")) return "Active&OOF";
+              if (ref.contains("hasInForcePolicy=No") && ref.contains("hasEligibleOutOfForcePolicy=Yes")) return "NotActive&OOF";
+              return "NotActive&NotOOF";
+            """,
+            "size": 10
+          }
+        }
+      }
+    }
+  }
+}
