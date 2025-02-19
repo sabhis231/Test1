@@ -1,8 +1,9 @@
 GET your-index/_search
 {
   "size": 0,
+  "_source": false,
   "aggs": {
-    "unique_customers": {
+    "customers": {
       "terms": {
         "script": """
           def match = /customers\\/([a-z0-9\\-]+)\\//.matcher(doc['access_referrer.keyword'].value);
@@ -15,7 +16,22 @@ GET your-index/_search
         "size": 10000
       },
       "aggs": {
-        "status_bucket": {
+        "total_count": {
+          "value_count": {
+            "field": "access_referrer.keyword"
+          }
+        },
+        "unique_count": {
+          "cardinality": {
+            "field": "access_referrer.keyword"
+          }
+        },
+        "latest_timestamp": {
+          "max": {
+            "field": "@timestamp"
+          }
+        },
+        "status": {
           "terms": {
             "script": """
               def ref = doc['access_referrer.keyword'].value;
@@ -24,7 +40,7 @@ GET your-index/_search
               if (ref.contains("hasInForcePolicy=No") && ref.contains("hasEligibleOutOfForcePolicy=Yes")) return "NotActive&OOF";
               return "NotActive&NotOOF";
             """,
-            "size": 10
+            "size": 1
           }
         }
       }
