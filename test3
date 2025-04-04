@@ -1,13 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>camel-springboot-xml-demo</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.1.5</version> <!-- Use latest Spring Boot 3.x -->
+    </parent>
+
+    <dependencies>
+        <!-- Spring Boot Starter -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Camel Dependencies -->
+        <dependency>
+            <groupId>org.apache.camel.springboot</groupId>
+            <artifactId>camel-spring-boot-starter</artifactId>
+            <version>3.20.5</version> <!-- Match with Spring Boot version -->
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-spring-xml</artifactId>
+            <version>3.20.5</version>
+        </dependency>
+
+        <!-- Example: Add ActiveMQ for JMS -->
+        <dependency>
+            <groupId>org.apache.camel.springboot</groupId>
+            <artifactId>camel-jms-starter</artifactId>
+            <version>3.20.5</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-activemq</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+<?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns:camel="http://camel.apache.org/schema/spring"
        xsi:schemaLocation="
-           http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
-           http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+           http://www.springframework.org/schema/beans 
+           http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://camel.apache.org/schema/spring 
+           http://camel.apache.org/schema/spring/camel-spring.xsd">
+
+    <!-- Example: ActiveMQ Connection Factory -->
+    <bean id="jmsConnectionFactory" class="org.apache.activemq.ActiveMQConnectionFactory">
+        <property name="brokerURL" value="${spring.activemq.broker-url}"/>
+    </bean>
+
+    <!-- Camel Context with Routes -->
     <camelContext xmlns="http://camel.apache.org/schema/spring">
-        <route>
-            <from uri="timer:myTimer"/>
-            <to uri="log:myLog"/>
+        <!-- Property placeholder for application.properties -->
+        <propertyPlaceholder location="application.properties" id="properties"/>
+
+        <!-- Example Route: Timer to Log -->
+        <route id="timerToLog">
+            <from uri="timer:myTimer?period={{timer.period}}"/>
+            <log message="Timer triggered at ${header.firedTime}"/>
+            <to uri="direct:process"/>
+        </route>
+
+        <!-- Example Route: Direct to JMS -->
+        <route id="processToJms">
+            <from uri="direct:process"/>
+            <transform>
+                <simple>Processed at ${date:now:yyyy-MM-dd HH:mm:ss}</simple>
+            </transform>
+            <to uri="jms:queue:myQueue"/>
         </route>
     </camelContext>
 </beans>
+
+# Camel Properties
+timer.period=5000
+
+# ActiveMQ Configuration
+spring.activemq.broker-url=tcp://localhost:61616
+jms.queue.myQueue=myQueue
+
+# Enable Camel health checks
+management.endpoint.health.enabled=true
+management.endpoints.web.exposure.include=health
+
