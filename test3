@@ -1,49 +1,13 @@
-GET your-index/_search
-{
-  "size": 0,
-  "_source": false,
-  "aggs": {
-    "customers": {
-      "terms": {
-        "script": """
-          def match = /customers\\/([a-z0-9\\-]+)\\//.matcher(doc['access_referrer.keyword'].value);
-          if (match.find()) {
-            return match.group(1);
-          } else {
-            return "unknown";
-          }
-        """,
-        "size": 10000
-      },
-      "aggs": {
-        "total_count": {
-          "value_count": {
-            "field": "access_referrer.keyword"
-          }
-        },
-        "unique_count": {
-          "cardinality": {
-            "field": "access_referrer.keyword"
-          }
-        },
-        "latest_timestamp": {
-          "max": {
-            "field": "@timestamp"
-          }
-        },
-        "status": {
-          "terms": {
-            "script": """
-              def ref = doc['access_referrer.keyword'].value;
-              if (ref.contains("hasInForcePolicy=Yes") && ref.contains("hasEligibleOutOfForcePolicy=No")) return "OnlyActive";
-              if (ref.contains("hasInForcePolicy=Yes") && ref.contains("hasEligibleOutOfForcePolicy=Yes")) return "Active&OOF";
-              if (ref.contains("hasInForcePolicy=No") && ref.contains("hasEligibleOutOfForcePolicy=Yes")) return "NotActive&OOF";
-              return "NotActive&NotOOF";
-            """,
-            "size": 1
-          }
-        }
-      }
-    }
-  }
-}
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:camel="http://camel.apache.org/schema/spring"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd">
+    <camelContext xmlns="http://camel.apache.org/schema/spring">
+        <route>
+            <from uri="timer:myTimer"/>
+            <to uri="log:myLog"/>
+        </route>
+    </camelContext>
+</beans>
