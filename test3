@@ -105,3 +105,13 @@ jms.queue.myQueue=myQueue
 management.endpoint.health.enabled=true
 management.endpoints.web.exposure.include=health
 
+<route id="httpRoute">
+    <from uri="netty-http:http://0.0.0.0:8050/myEndpoint"/>
+    <log message="HTTP request received: ${body}"/>
+    <transform>
+        <simple>Hello from Camel on port 8050!</simple>
+    </transform>
+</route>
+
+
+
