@@ -1,0 +1,34 @@
+#!/bin/bash
+
+LOGFILE="caapi.log"
+
+awk '
+{
+    # Extract timestamp (first field in line)
+    timestamp=$1
+
+    # Extract ReqURL
+    match($0, /ReqURL: :([^ ]+)/, arr)
+    url=arr[1]
+
+    # Extract NBRespCode and SBRespCode
+    match($0, /NBRespCode: :([0-9]+)/, nb)
+    match($0, /SBRespCode: :([0-9]+)/, sb)
+
+    if (url != "" && (nb[1] != "" || sb[1] != "")) {
+        if (nb[1] == "200" || sb[1] == "200") {
+            count[timestamp "|" url "|200"]++
+        }
+        if (nb[1] == "500" || sb[1] == "500") {
+            count[timestamp "|" url "|500"]++
+        }
+    }
+}
+END {
+    printf "%-25s %-80s %-6s %-6s\n", "Timestamp", "ReqURL", "Code", "Count"
+    for (k in count) {
+        split(k, parts, "|")
+        printf "%-25s %-80s %-6s %-6d\n", parts[1], parts[2], parts[3], count[k]
+    }
+}
+' "$LOGFILE" | sort
