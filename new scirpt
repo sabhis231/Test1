@@ -1,34 +1,91 @@
 #!/bin/bash
+# Usage: ./parse_caapi.sh [logfile] [start_time] [end_time] [url1,url2,...] [bucket_min]
+# Defaults: logfile=./caapi.log, start_time=00:00, end_time=23:59, all URLs, bucket_min=60
 
-LOGFILE="caapi.log"
+LOGFILE="${1:-./caapi.log}"
+START_TIME="${2:-00:00}"
+END_TIME="${3:-23:59}"
+URL_FILTERS="${4:-.*}"     # Comma-separated regex or ".*" for all
+BUCKET_MIN="${5:-60}"      # Default 60 minutes if not passed
 
-awk '
+if [ ! -f "$LOGFILE" ]; then
+    echo "Error: Log file not found -> $LOGFILE"
+    exit 1
+fi
+
+# Convert comma-separated URL filters into array
+IFS=',' read -ra URL_ARR <<< "$URL_FILTERS"
+
+# ANSI color codes
+RED="\033[31m"
+GREEN="\033[32m"
+RESET="\033[0m"
+
+awk -v stime="$START_TIME" -v etime="$END_TIME" -v urls="${URL_FILTERS}" -v bucket="$BUCKET_MIN" -v red="$RED" -v green="$GREEN" -v reset="$RESET" '
+BEGIN {
+    split(urls, url_arr, ",")
+    split(stime, a, ":"); start_min = a[1]*60 + a[2]
+    split(etime, b, ":"); end_min = b[1]*60 + b[2]
+}
 {
-    # Extract timestamp (first field in line)
     timestamp=$1
+    match(timestamp, /T([0-9][0-9]):([0-9][0-9]):/, t)
+    hour=t[1]+0
+    min=t[2]+0
+    total_min = hour*60 + min
 
-    # Extract ReqURL
+    if (total_min < start_min || total_min > end_min) next
+
     match($0, /ReqURL: :([^ ]+)/, arr)
     url=arr[1]
 
-    # Extract NBRespCode and SBRespCode
     match($0, /NBRespCode: :([0-9]+)/, nb)
     match($0, /SBRespCode: :([0-9]+)/, sb)
 
-    if (url != "" && (nb[1] != "" || sb[1] != "")) {
-        if (nb[1] == "200" || sb[1] == "200") {
-            count[timestamp "|" url "|200"]++
-        }
-        if (nb[1] == "500" || sb[1] == "500") {
-            count[timestamp "|" url "|500"]++
+    match($0, /ElapsedTime:: ([0-9]+)/, elap)
+    elapsed = elap[1]+0
+
+    # Round to bucket size
+    bucket_minute = int(min/bucket)*bucket
+    time_bucket = sprintf("%02d:%02d", hour, bucket_minute)
+
+    for (i in url_arr) {
+        if (url ~ url_arr[i]) {
+            key_base = url_arr[i] "|" time_bucket
+            total_base = url_arr[i]  # for overall summary
+
+            if (nb[1]=="200" || sb[1]=="200") {
+                count[key_base"|200"]++
+                sum_elapsed[key_base"|200"] += elapsed
+                total_count[total_base"|200"]++
+                total_elapsed[total_base"|200"] += elapsed
+            }
+            if (nb[1]=="500" || sb[1]=="500") {
+                count[key_base"|500"]++
+                sum_elapsed[key_base"|500"] += elapsed
+                total_count[total_base"|500"]++
+                total_elapsed[total_base"|500"] += elapsed
+            }
         }
     }
 }
 END {
-    printf "%-25s %-80s %-6s %-6s\n", "Timestamp", "ReqURL", "Code", "Count"
+    printf "%-25s %-80s %-6s %-6s %-15s\n", "TimeBucket", "ReqURL", "Code", "Count", "AvgElapsed(ms)"
     for (k in count) {
         split(k, parts, "|")
-        printf "%-25s %-80s %-6s %-6d\n", parts[1], parts[2], parts[3], count[k]
+        avg = (count[k]>0) ? sum_elapsed[k]/count[k] : 0
+        color = (parts[3]=="200") ? green : red
+        printf "%s%-25s %-80s %-6s %-6d %-15.2f%s\n", color, parts[2], parts[1], parts[3], count[k], avg, reset
+    }
+
+    # Print summary
+    printf "\n%-80s %-6s %-6s %-15s\n", "URL Summary", "Code", "Count", "AvgElapsed(ms)"
+    for (u in total_count) {
+        split(u, parts, "|")
+        avg_total = (total_count[u]>0) ? total_elapsed[u]/total_count[u] : 0
+        color = (parts[2]=="200") ? green : red
+        printf "%s%-80s %-6s %-6d %-15.2f%s\n", color, parts[1], parts[2], total_count[u], avg_total, reset
     }
 }
 ' "$LOGFILE" | sort
+./parse_caapi.sh /var/log/caapi.log 10:00 12:00 "/csi/sys/document-utility/v1/uploaddocument,/csi/sys/other-api" 15
