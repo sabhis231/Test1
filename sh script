@@ -92,12 +92,23 @@ echo -e "${BLUE}Time ranges:${NC} ${TIME_RANGES[*]}"
 echo -e "${BLUE}Top results:${NC} $SHOW_TOP"
 echo -e "${CYAN}$(printf '%.0s=' {1..50})${NC}"
 
+# Function to remove leading zeros to avoid octal interpretation
+remove_leading_zeros() {
+    local num=$1
+    echo $((10#$num))
+}
+
 # Function to check if hour is in any of the specified ranges
 is_hour_in_range() {
     local hour=$1
+    hour=$(remove_leading_zeros "$hour")
+    
     for range in "${TIME_RANGES[@]}"; do
         local start=$(echo "$range" | cut -d'-' -f1)
         local end=$(echo "$range" | cut -d'-' -f2)
+        start=$(remove_leading_zeros "$start")
+        end=$(remove_leading_zeros "$end")
+        
         if [[ "$hour" -ge "$start" ]] && [[ "$hour" -le "$end" ]]; then
             return 0
         fi
@@ -220,8 +231,14 @@ for pattern in "${URL_PATTERNS[@]}"; do
     for range in "${TIME_RANGES[@]}"; do
         start_hour=$(echo "$range" | cut -d'-' -f1)
         end_hour=$(echo "$range" | cut -d'-' -f2)
+        start_hour=$(remove_leading_zeros "$start_hour")
+        end_hour=$(remove_leading_zeros "$end_hour")
         
         echo -e "\n${CYAN}=== URL: $pattern === Time: ${start_hour}-${end_hour} ===${NC}"
+        
+        # Display header
+        printf "%-6s %-8s %-10s %-60s %-10s %-6s\n" "Time" "Status" "Count" "URL" "RespTime" "Code"
+        printf "%-6s %-8s %-10s %-60s %-10s %-6s\n" "------" "--------" "----------" "------------------------------------------------------------" "----------" "------"
         
         # Filter for this specific pattern and time range
         grep "$pattern" "$TEMP_COUNTS" | while read line; do
@@ -234,6 +251,8 @@ for pattern in "${URL_PATTERNS[@]}"; do
             
             # Check if this entry is in the current time range
             entry_hour=$(echo "$time_cat" | cut -d':' -f1)
+            entry_hour=$(remove_leading_zeros "$entry_hour")
+            
             if [[ "$entry_hour" -ge "$start_hour" ]] && [[ "$entry_hour" -le "$end_hour" ]]; then
                 if [ "$status" -eq 200 ]; then
                     color="$GREEN"
@@ -243,8 +262,8 @@ for pattern in "${URL_PATTERNS[@]}"; do
                     status_text="ERROR"
                 fi
                 
-                if [ ${#url} -gt 50 ]; then
-                    url="${url:0:47}..."
+                if [ ${#url} -gt 58 ]; then
+                    url="${url:0:55}..."
                 fi
                 
                 printf "%-6s %-8s ${color}%-10s${NC} %-60s %-10s %-6s\n" \
@@ -254,35 +273,60 @@ for pattern in "${URL_PATTERNS[@]}"; do
         
         # Display summary for this combination
         if [ "$SHOW_SUMMARY" = true ]; then
-            total_200=$(grep "$pattern" "$TEMP_COUNTS" | grep "|200|" | awk -v start="$start_hour" -v end="$end_hour" '
-            {
-                hour = substr($0, index($0,"|")+1)
-                hour = substr(hour, 1, index(hour,":")-1)
-                hour = hour + 0
-                if (hour >= start && hour <= end) {
-                    sum += $1
-                }
-            } END {print sum}')
+            total_200=0
+            total_500=0
             
-            total_500=$(grep "$pattern" "$TEMP_COUNTS" | grep "|500|" | awk -v start="$start_hour" -v end="$end_hour" '
-            {
-                hour = substr($0, index($0,"|")+1)
-                hour = substr(hour, 1, index(hour,":")-1)
-                hour = hour + 0
-                if (hour >= start && hour <= end) {
-                    sum += $1
-                }
-            } END {print sum}')
+            while read line; do
+                count=$(echo $line | awk '{print $1}')
+                rest=$(echo $line | cut -d' ' -f2-)
+                time_cat=$(echo $rest | cut -d'|' -f1)
+                status=$(echo $rest | cut -d'|' -f3)
+                
+                entry_hour=$(echo "$time_cat" | cut -d':' -f1)
+                entry_hour=$(remove_leading_zeros "$entry_hour")
+                
+                if [[ "$entry_hour" -ge "$start_hour" ]] && [[ "$entry_hour" -le "$end_hour" ]]; then
+                    if [ "$status" -eq 200 ]; then
+                        total_200=$((total_200 + count))
+                    elif [ "$status" -eq 500 ]; then
+                        total_500=$((total_500 + count))
+                    fi
+                fi
+            done < <(grep "$pattern" "$TEMP_COUNTS")
             
             total=$((total_200 + total_500))
             
             if [ $total -gt 0 ]; then
                 success_rate=$(echo "scale=2; $total_200 * 100 / $total" | bc)
-                echo -e "${BLUE}Summary for $pattern (${start_hour}-${end_hour}):${NC}"
+                echo -e "\n${BLUE}Summary for '$pattern' (${start_hour}-${end_hour}):${NC}"
                 echo -e "  Total requests: $total"
                 echo -e "  Success (200): ${GREEN}$total_200${NC}"
                 echo -e "  Errors (500): ${RED}$total_500${NC}"
                 echo -e "  Success rate: ${GREEN}$success_rate%${NC}"
+                
+                # Calculate average response time
+                avg_time_200=$(grep "$pattern" "$TEMP_COUNTS" | grep "|200|" | awk -v start="$start_hour" -v end="$end_hour" -F'|' '
+                {
+                    hour = substr($1, 1, index($1,":")-1)
+                    hour = hour + 0
+                    if (hour >= start && hour <= end) {
+                        sum += $4
+                        count++
+                    }
+                } END {if (count>0) printf "%.2f", sum/count; else print "N/A"}')
+                
+                avg_time_500=$(grep "$pattern" "$TEMP_COUNTS" | grep "|500|" | awk -v start="$start_hour" -v end="$end_hour" -F'|' '
+                {
+                    hour = substr($1, 1, index($1,":")-1)
+                    hour = hour + 0
+                    if (hour >= start && hour <= end) {
+                        sum += $4
+                        count++
+                    }
+                } END {if (count>0) printf "%.2f", sum/count; else print "N/A"}')
+                
+                echo -e "  Avg response time (200): ${GREEN}${avg_time_200}ms${NC}"
+                echo -e "  Avg response time (500): ${RED}${avg_time_500}ms${NC}"
             fi
         fi
     done
@@ -290,17 +334,14 @@ done
 
 echo -e "\n${GREEN}Analysis completed successfully!${NC}"
 
-# Example 1: Upload document between 10-11 AM
+# Example 1: Upload document between 10-11 AM (will handle "10" correctly)
 ./caapi_log_analyzer_dynamic.sh -f access.log -u "uploaddocument" -t 10-11
 
-# Example 2: Download document between 12-1 PM  
-./caapi_log_analyzer_dynamic.sh -f access.log -u "downloaddocument" -t 12-13
+# Example 2: Download document between 09-10 AM (will handle "09" correctly)  
+./caapi_log_analyzer_dynamic.sh -f access.log -u "downloaddocument" -t 09-10
 
-# Multiple patterns and time ranges
-./caapi_log_analyzer_dynamic.sh -f access.log -u "uploaddocument" -u "downloaddocument" -t 10-11 -t 12-13
+# Early morning hours (00-06)
+./caapi_log_analyzer_dynamic.sh -f access.log -u "uploaddocument" -t 00-06
 
-# Show top 30 results
-./caapi_log_analyzer_dynamic.sh -f access.log -u "uploaddocument" -t 10-11 -n 30
-
-# Analyze specific API version
-./caapi_log_analyzer_dynamic.sh -f access.log -u "v1/upload" -t 10-11
+# Multiple time ranges including ones with leading zeros
+./caapi_log_analyzer_dynamic.sh -f access.log -u "uploaddocument" -t 09-11 -t 14-16
