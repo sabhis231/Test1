@@ -1,0 +1,233 @@
+#!/bin/bash
+# CAAPI Log Analyzer: Bucketed + Top-N Leaderboard + Real-time
+LOG_FILE=""
+SHOW_TOP=10
+COLOR_OUTPUT=true
+SHOW_SUMMARY=true
+BUCKET_MIN=60
+REALTIME=false
+
+declare -a URL_PATTERNS
+declare -a TIME_RANGES
+
+# Colors
+if [ "$COLOR_OUTPUT" = true ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    CYAN='\033[0;36m'
+    NC='\033[0m'
+else
+    RED=''; GREEN=''; CYAN=''; NC=''
+fi
+
+usage() {
+    echo "Usage: $0 -f <logfile> [-u <url_pattern>] [-t <start-end>] [-b <bucket_min>] [-n <top>] [--realtime] [--no-color]"
+    exit 1
+}
+
+# Parse args
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -f) LOG_FILE="$2"; shift 2 ;;
+        -u) URL_PATTERNS+=("$2"); shift 2 ;;
+        -t) TIME_RANGES+=("$2"); shift 2 ;;
+        -b) BUCKET_MIN="$2"; shift 2 ;;
+        -n) SHOW_TOP="$2"; shift 2 ;;
+        --realtime) REALTIME=true; shift ;;
+        --no-color) COLOR_OUTPUT=false; shift ;;
+        -h) usage ;;
+        *) echo "Unknown option: $1"; usage ;;
+    esac
+done
+
+[[ -z "$LOG_FILE" || ! -f "$LOG_FILE" ]] && echo "Log file missing" && exit 1
+[[ ${#URL_PATTERNS[@]} -eq 0 ]] && URL_PATTERNS=(".*")
+[[ ${#TIME_RANGES[@]} -eq 0 ]] && TIME_RANGES=("0-23")
+
+URL_REGEX=$(IFS="|"; echo "${URL_PATTERNS[*]}")
+TIME_RANGES_STR=$(IFS=","; echo "${TIME_RANGES[*]}")
+
+# AWK script
+AWK_SCRIPT=$(cat <<'EOF'
+# Global function for Top-N leaderboard
+function print_leaderboard(top) {
+    print cyan "=== Top-" top " Leaderboard ===" nc;
+    printf "%-50s %-6s %-8s %-10s %-10s\n","URL","Code","Count","Avg(ms)","Pct";
+    delete top_data;
+    for(k in leaderboard){
+        split(k,a,"|"); url=a[1]; code=a[2];
+        avg=leaderboard_sum[k]/leaderboard[k];
+        total_requests=0;
+        for(j in leaderboard){split(j,b,"|"); if(b[1]==url) total_requests+=leaderboard[j];}
+        pct=(leaderboard[k]/total_requests)*100;
+        top_data[url "|" code]=leaderboard[k] "|" avg "|" pct;
+    }
+    n=0;
+    for(k in top_data){
+        n++; split(top_data[k],v,"|"); url_code=k; cnt=v[1]; avg=v[2]; pct=v[3];
+        leaderboard_arr[n,"url_code"]=url_code; leaderboard_arr[n,"cnt"]=cnt; leaderboard_arr[n,"avg"]=avg; leaderboard_arr[n,"pct"]=pct;
+    }
+    PROCINFO["sorted_in"]="@val_num_desc";
+    i=0;
+    for(n=1;n<=length(leaderboard_arr);n++){
+        url_code=leaderboard_arr[n,"url_code"]; cnt=leaderboard_arr[n,"cnt"]; avg=leaderboard_arr[n,"avg"]; pct=leaderboard_arr[n,"pct"];
+        split(url_code,a,"|"); url=a[1]; code=a[2];
+        color=(code==200)?green:red;
+        printf "%-50s %s%-6s%s %-8d %-10.2f %-9.2f%%\n", url, color, code, nc, cnt, avg, pct;
+        i++; if(i>=top) break;
+    }
+}
+
+BEGIN{
+    split(times, tr, ",");
+    OFS="|";
+}
+
+function in_time_range(hr){
+    for(i in tr){ split(tr[i], t, "-"); if(hr >= t[1] && hr <= t[2]) return 1; }
+    return 0;
+}
+
+function url_match(u){ return (u ~ urls); }
+
+{
+    ts=$1; url=""; status=""; elapsed="";
+
+    for(i=1;i<=NF;i++){
+        if($i~/ReqURL:/){url=$i; sub(/ReqURL::?/,"",url);}
+        if($i~/SBRespCode:/){status=$i; sub(/SBRespCode::?/,"",status);}
+        if($i~/ElapsedTime:/){elapsed=$i; sub(/ElapsedTime::?/,"",elapsed);}
+    }
+
+    if(status!=200 && status!=500) next;
+
+    match(ts,/T([0-9]{2}):([0-9]{2})/, t);
+    hr=t[1]+0; mn=t[2]+0;
+    if(!in_time_range(hr)) next;
+    if(!url_match(url)) next;
+
+    bucket_mn=int(mn/bucket)*bucket;
+    btime=sprintf("%02d:%02d", hr, bucket_mn);
+
+    # Store for bucketed report
+    report[btime "|" url "|" status] = elapsed;
+    count_bucket[btime "|" url "|" status]++;
+    sum_bucket[btime "|" url "|" status]+=elapsed;
+
+    # Leaderboard aggregation
+    leaderboard[url "|" status]++; leaderboard_sum[url "|" status]+=elapsed;
+}
+
+END{
+    print cyan "=== CAAPI Log Analysis (Bucketed) ===" nc;
+    printf "%-8s %-60s %-6s %-8s %-10s\n","Time","URL","Code","Count","Avg(ms)";
+    PROCINFO["sorted_in"]="@ind_str_asc"; # sort by time ascending
+    for(k in count_bucket){
+        split(k,a,"|"); time=a[1]; url=a[2]; code=a[3];
+        cnt=count_bucket[k]; avg=sum_bucket[k]/cnt;
+        color=(code==200)?green:red;
+        printf "%-8s %-60s %s%-6s%s %-8d %-10.2f\n", time, url, color, code, nc, cnt, avg;
+    }
+
+    # Top-N leaderboard
+    print_leaderboard(top);
+}
+EOF
+)
+
+if [ "$REALTIME" = true ]; then
+    echo -e "${CYAN}Starting real-time monitoring of $LOG_FILE ...${NC}"
+    tail -F "$LOG_FILE" | awk -v bucket="$BUCKET_MIN" -v top="$SHOW_TOP" \
+        -v urls="$URL_REGEX" -v times="$TIME_RANGES_STR" \
+        -v red="$RED" -v green="$GREEN" -v cyan="$CYAN" -v nc="$NC" "$AWK_SCRIPT"
+else
+    awk -v bucket="$BUCKET_MIN" -v top="$SHOW_TOP" \
+        -v urls="$URL_REGEX" -v times="$TIME_RANGES_STR" \
+        -v red="$RED" -v green="$GREEN" -v cyan="$CYAN" -v nc="$NC" "$AWK_SCRIPT" "$LOG_FILE"
+fi
+
+
+# Static analysis
+./caapi_analyzer.sh -f caapi.log -u "uploaddocument" -t 10-11 -b 15 -n 5
+
+# Real-time mode
+./caapi_analyzer.sh -f caapi.log --realtime -u "uploaddocument" -t 10-11 -b 15 -n 5
+
+./caapi_analyzer.sh \
+-f /var/log/caapi.log \
+-u "uploaddocument" \
+-u "downloaddocument" \
+-u "searchdocument" \
+-t 9-10 \
+-t 12-13 \
+-t 15-16 \
+-b 15 \
+-n 10 \
+--realtime \
+--no-color
+
+| Parameter    | Value                                                      | Description                                     |
+| ------------ | ---------------------------------------------------------- | ----------------------------------------------- |
+| `-f`         | `/var/log/caapi.log`                                       | Log file path (required)                        |
+| `-u`         | `"uploaddocument"` `"downloaddocument"` `"searchdocument"` | Filter multiple URL patterns                    |
+| `-t`         | `9-10 12-13 15-16`                                         | Analyze multiple hour ranges (start-end in 24h) |
+| `-b`         | `15`                                                       | Group logs in 15-minute buckets                 |
+| `-n`         | `10`                                                       | Show top 10 URLs in leaderboard                 |
+| `--realtime` | —                                                          | Enable continuous monitoring of log             |
+| `--no-color` | —                                                          | Disable terminal colors                         |
+
+
+       +------------------+
+       |   CAAPI Log File |
+       +------------------+
+                |
+                v
+   +------------------------+
+   |  Read log lines (tail) |
+   |   - Real-time or batch |
+   +------------------------+
+                |
+                v
+   +------------------------+
+   | Extract Fields from Log|
+   | Timestamp, URL, Status |
+   | ElapsedTime (ms)       |
+   +------------------------+
+                |
+                v
+   +------------------------+
+   | Apply Filters:         |
+   | - URL Patterns (-u)    |
+   | - Time Ranges (-t)     |
+   | - Status Codes 200/500 |
+   +------------------------+
+                |
+                v
+   +------------------------+
+   | Bucket Aggregation     |
+   | - Group by hour+minute |
+   | - Count & Avg Elapsed  |
+   +------------------------+
+                |
+                v
+   +------------------------+
+   | First Report:          |
+   | "CAAPI Log Analysis    |
+   | (Bucketed)"            |
+   | - Sorted by Time       |
+   | - Full URL             |
+   | - Count, Avg(ms)       |
+   +------------------------+
+                |
+                v
+   +------------------------+
+   | Leaderboard:           |
+   | - Top-N URLs (-n)      |
+   | - Color-coded (200/500)|
+   | - Count, Avg(ms), %    |
+   +------------------------+
+                |
+                v
+          +-------------+
+          |  Output    |
+          +-------------+
