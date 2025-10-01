@@ -34,3 +34,112 @@ if __name__ == "__main__":
     folder2 = sys.argv[2]
 
     missing_folders(folder1, folder2)
+
+
+
+
+
+import os
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+from collections import Counter
+
+# List of Maven URLs to download
+URLS = [
+    "https://maven.repository.redhat.com/ga/org/optaplanner/optaplanner-bom/7.3.0.Final-redhat-1/",
+    "https://maven.repository.redhat.com/ga/org/apache-extras/camel-extra/camel-parent/2.21.0.fuse-710018-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/kie/kie-user-bom-parent/7.3.0.Final-redhat-1/",
+    "https://maven.repository.redhat.com/ga/org/jboss/integration-platform/jboss-integration-platform-parent/7.0.0.CR9-redhat-1/",
+    "https://maven.repository.redhat.com/ga/org/apache/karaf/karaf/4.2.0.fuse-710024-redhat-00002/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-parent/3.1.11.fuse-710022-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf/3.1.11.fuse-710022-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/io/fabric8/fabric8-project-bom-fuse-karaf/3.0.11.fuse-710023-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/io/hawt/hawtio-bom/2.0.0.fuse-710018-redhat-00002/",
+    "https://maven.repository.redhat.com/ga/io/hawt/project/2.0.0.fuse-710018-redhat-00002/",
+    "https://maven.repository.redhat.com/ga/org/jboss/jboss-parent/26.0.0.redhat-1/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-rs-extension-providers/3.1.11.fuse-710022-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-core/3.1.11.fuse-710022-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-frontend-jaxrs/3.1.11.fuse-710022-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-transports-http/3.1.11.fuse-710022-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-transports-http-undertow/3.1.11.fuse-710022-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/ws/xmlschema/xmlschema-core/2.2.1.redhat-2/",
+    "https://maven.repository.redhat.com/ga/javax/ws/rs/javax.ws.rs-api/2.0.1.redhat-1/",
+    "https://maven.repository.redhat.com/ga/org/apache/camel/camel-core/2.21.0.fuse-710018-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/camel/camel-undertow/2.21.0.fuse-710018-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/ws/xmlschema/xmlschema/2.2.1.redhat-2/",
+    "https://maven.repository.redhat.com/ga/org/apache/apache/16.0.0.redhat-5/",
+    "https://maven.repository.redhat.com/ga/org/jboss/jboss-parent/19.0.0.redhat-1/",
+    "https://maven.repository.redhat.com/ga/org/apache/camel/components/2.21.0.fuse-710018-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/slf4j/slf4j-api/1.7.22.redhat-2/",
+    "https://maven.repository.redhat.com/ga/org/apache/camel/camel-test-blueprint/2.21.0.fuse-710018-redhat-00001/",
+    "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-frontend-jaxws/3.1.11.fuse-710022-redhat-00001/"
+]
+
+DOWNLOAD_DIR = os.path.expanduser("~/Downloads/maven_all_files")
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+downloaded_files = []
+
+def download_file(url, dest_folder):
+    local_filename = os.path.join(dest_folder, os.path.basename(urlparse(url).path))
+    if not os.path.exists(local_filename):
+        try:
+            r = requests.get(url, stream=True, timeout=15)
+            r.raise_for_status()
+            with open(local_filename, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            print(f"⬇️  Downloaded {url}")
+            downloaded_files.append(local_filename)
+        except Exception as e:
+            print(f"⚠️  Failed {url}: {e}")
+    return local_filename
+
+def explore_and_download(url, dest_folder, root_url):
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"⚠️ Cannot access {url}: {e}")
+        return
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    links = soup.find_all("a")
+
+    for link in links:
+        href = link.get("href")
+        if not href or href in ["../", "/"]:
+            continue
+
+        full_url = urljoin(url, href)
+
+        # Only follow subfolders inside the root URL
+        if not full_url.startswith(root_url):
+            continue
+
+        if href.endswith("/"):  # subfolder
+            subfolder = os.path.join(dest_folder, href.strip("/"))
+            os.makedirs(subfolder, exist_ok=True)
+            print(f"\n📂 Exploring dependency: {full_url}")
+            explore_and_download(full_url, subfolder, root_url)
+        else:
+            # ✅ Download any file, no filtering
+            download_file(full_url, dest_folder)
+
+# Start download for each URL
+for root_url in URLS:
+    print(f"\n🚀 Starting full download for {root_url}\n")
+    artifact_name = "/".join(urlparse(root_url).path.strip("/").split("/")[2:])
+    dest_folder = os.path.join(DOWNLOAD_DIR, artifact_name)
+    os.makedirs(dest_folder, exist_ok=True)
+    explore_and_download(root_url, dest_folder, root_url)
+
+# Summary
+from collections import Counter
+file_types = [os.path.splitext(f)[1] for f in downloaded_files]
+counter = Counter(file_types)
+print("\n✅ Download complete!")
+print(f"Total files: {len(downloaded_files)}")
+for ext, count in counter.items():
+    print(f"  {ext or '[no extension]'}: {count} files")
+
