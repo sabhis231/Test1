@@ -1,29 +1,31 @@
 import os
 import sys
 
-def missing_folders(folder1, folder2):
-    # Collect all folders in folder1
+def missing_leaf_folders(folder1, folder2):
     folder1_dirs = set()
+    folder2_dirs = set()
+
+    # Collect folders from folder1
     for root, dirs, files in os.walk(folder1):
-        for d in dirs:
-            rel_path = os.path.relpath(os.path.join(root, d), folder1)
+        if not dirs:  # leaf folder (no subdirectories inside)
+            rel_path = os.path.relpath(root, folder1)
             folder1_dirs.add(rel_path)
 
-    # Collect all folders in folder2
-    folder2_dirs = set()
+    # Collect folders from folder2
     for root, dirs, files in os.walk(folder2):
-        for d in dirs:
-            rel_path = os.path.relpath(os.path.join(root, d), folder2)
+        if not dirs:  # leaf folder (no subdirectories inside)
+            rel_path = os.path.relpath(root, folder2)
             folder2_dirs.add(rel_path)
 
-    # Find folders in folder1 missing in folder2
+    # Find leaf folders in folder1 missing in folder2
     missing_dirs = folder1_dirs - folder2_dirs
     if missing_dirs:
-        print(f"Folders in {folder1} but missing in {folder2}:")
+        print(f"Leaf folders in {folder1} but missing in {folder2}:")
         for folder in sorted(missing_dirs):
             print(os.path.join(folder1, folder))
     else:
-        print(f"All folders in {folder1} exist in {folder2}")
+        print(f"All leaf folders in {folder1} exist in {folder2}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
@@ -33,7 +35,8 @@ if __name__ == "__main__":
     folder1 = sys.argv[1]
     folder2 = sys.argv[2]
 
-    missing_folders(folder1, folder2)
+    missing_leaf_folders(folder1, folder2)
+
 
 
 
