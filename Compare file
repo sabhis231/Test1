@@ -238,13 +238,29 @@ URLS=(
     "https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-frontend-jaxws/3.1.11.fuse-710022-redhat-00001/"
 )
 
-# Loop through URLs and download recursively
+# File extensions to download
+EXTS=("pom" "jar" "md5" "sha1" "sha256" "sha512" "xml" "properties" "txt" "asc")
+
+# Loop through URLs
 for url in "${URLS[@]}"; do
-    echo "⬇️ Downloading from $url ..."
-    wget -r -np -nH --cut-dirs=3 -P "$BASE_DIR" \
-        -R "index.html*" \
-        -A "*.pom,*.jar,*.md5,*.sha1,*.sha256,*.sha512,*.xml,*.properties,*.txt,*.asc" \
-        "$url"
+    echo "🔍 Checking $url"
+    
+    # Fetch the HTML index
+    html=$(curl -s "$url")
+    
+    # Extract file links
+    for ext in "${EXTS[@]}"; do
+        links=$(echo "$html" | grep -oE "[a-zA-Z0-9._-]+\.$ext")
+        for file in $links; do
+            full_url="$url$file"
+            target_dir="$BASE_DIR$(echo $url | sed 's#https://maven.repository.redhat.com/ga##')"
+            mkdir -p "$target_dir"
+            
+            echo "⬇️  Downloading $file"
+            curl -s -o "$target_dir/$file" "$full_url"
+        done
+    done
 done
 
 echo "✅ All downloads completed. Files saved in $BASE_DIR"
+
