@@ -146,3 +146,57 @@ print(f"Total files: {len(downloaded_files)}")
 for ext, count in counter.items():
     print(f"  {ext or '[no extension]'}: {count} files")
 
+
+
+import os
+import sys
+import shutil
+
+def copy_missing_leaf_folders(folder1, folder2, folder3):
+    folder1_dirs = set()
+    folder2_dirs = set()
+
+    # Collect leaf folders from folder1
+    for root, dirs, files in os.walk(folder1):
+        if not dirs:  # leaf folder
+            rel_path = os.path.relpath(root, folder1)
+            folder1_dirs.add(rel_path)
+
+    # Collect leaf folders from folder2
+    for root, dirs, files in os.walk(folder2):
+        if not dirs:  # leaf folder
+            rel_path = os.path.relpath(root, folder2)
+            folder2_dirs.add(rel_path)
+
+    # Find leaf folders missing in folder2
+    missing_dirs = folder1_dirs - folder2_dirs
+
+    if missing_dirs:
+        print(f"Copying {len(missing_dirs)} missing leaf folders from {folder1} → {folder3}:\n")
+        for rel_path in sorted(missing_dirs):
+            src_path = os.path.join(folder1, rel_path)
+            dest_path = os.path.join(folder3, rel_path)
+
+            # Ensure parent directory exists in repo3
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+            # Copy folder recursively
+            if os.path.exists(dest_path):
+                print(f"Skipping (already exists in repo3): {dest_path}")
+            else:
+                shutil.copytree(src_path, dest_path)
+                print(f"Copied: {src_path} → {dest_path}")
+    else:
+        print(f"No missing leaf folders. {folder2} already has all leaf folders from {folder1}.")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print(f"Usage: python {sys.argv[0]} <folder1> <folder2> <folder3>")
+        sys.exit(1)
+
+    folder1 = sys.argv[1]
+    folder2 = sys.argv[2]
+    folder3 = sys.argv[3]
+
+    copy_missing_leaf_folders(folder1, folder2, folder3)
