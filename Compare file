@@ -332,3 +332,52 @@ dir "%BASE_DIR%" /b | find /c /v "" > nul && echo 📁 Total files downloaded:
 for /f %%c in ('dir "%BASE_DIR%" /b ^| find /c /v ""') do echo %%c
 
 endlocal
+
+
+
+#!/bin/bash
+
+# Base download directory for Windows - fixed path
+BASE_DIR="/c/Users/ayadav7/Downloads/maven-deps"
+
+# List of Maven repository URLs
+URLS=(
+    "https://maven.repository.redhat.com/ga/org/optaplanner/optaplanner-bom/7.3.0.Final-redhat-1/"
+)
+
+# File extensions to download
+EXTS=("pom" "jar" "md5" "sha1" "sha256" "sha512" "xml" "properties" "txt" "asc")
+
+# Create base directory
+mkdir -p "$BASE_DIR"
+
+# Loop through URLs
+for url in "${URLS[@]}"; do
+    echo "🔍 Checking $url"
+    
+    # Fetch the HTML index
+    html=$(curl -s "$url")
+    
+    # Extract file links
+    for ext in "${EXTS[@]}"; do
+        links=$(echo "$html" | grep -oE "[a-zA-Z0-9._-]+\.$ext")
+        for file in $links; do
+            full_url="$url$file"
+            
+            echo "⬇️  Downloading $file"
+            # Download directly to base directory (no subfolders)
+            curl -s -o "$BASE_DIR/$file" "$full_url"
+            
+            # Check if download was successful
+            if [ -f "$BASE_DIR/$file" ]; then
+                echo "✅ Downloaded: $file"
+            else
+                echo "❌ Failed to download: $file"
+            fi
+        done
+    done
+done
+
+echo "✅ All downloads completed. Files saved in $BASE_DIR"
+echo "📁 Files downloaded:"
+ls -la "$BASE_DIR"
