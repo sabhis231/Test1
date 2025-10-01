@@ -1,0 +1,33 @@
+import os
+import sys
+
+def missing_in_folder2(folder1, folder2):
+    folder1_items = set()
+    for root, dirs, files in os.walk(folder1):
+        for name in files + dirs:
+            rel_path = os.path.relpath(os.path.join(root, name), folder1)
+            folder1_items.add(rel_path)
+
+    folder2_items = set()
+    for root, dirs, files in os.walk(folder2):
+        for name in files + dirs:
+            rel_path = os.path.relpath(os.path.join(root, name), folder2)
+            folder2_items.add(rel_path)
+
+    missing_items = folder1_items - folder2_items
+    if missing_items:
+        print(f"Items in {folder1} but missing in {folder2}:")
+        for item in sorted(missing_items):
+            print(os.path.join(folder1, item))
+    else:
+        print(f"All items in {folder1} exist in {folder2}")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print(f"Usage: python {sys.argv[0]} <folder1> <folder2>")
+        sys.exit(1)
+
+    folder1 = sys.argv[1]
+    folder2 = sys.argv[2]
+
+    missing_in_folder2(folder1, folder2)
