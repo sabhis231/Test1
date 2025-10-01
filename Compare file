@@ -264,3 +264,71 @@ done
 
 echo "✅ All downloads completed. Files saved in $BASE_DIR"
 
+
+@echo off
+setlocal enabledelayedexpansion
+
+:: Base download directory
+set "BASE_DIR=%USERPROFILE%\Downloads\maven-deps"
+
+:: Create base directory
+if not exist "%BASE_DIR%" mkdir "%BASE_DIR%"
+
+:: List of Maven repository URLs
+set URL[0]=https://maven.repository.redhat.com/ga/org/optaplanner/optaplanner-bom/7.3.0.Final-redhat-1/
+set URL[1]=https://maven.repository.redhat.com/ga/org/apache-extras/camel-extra/camel-parent/2.21.0.fuse-710018-redhat-00001/
+set URL[2]=https://maven.repository.redhat.com/ga/org/kie/kie-user-bom-parent/7.3.0.Final-redhat-1/
+set URL[3]=https://maven.repository.redhat.com/ga/org/jboss/integration-platform/jboss-integration-platform-parent/7.0.0.CR9-redhat-1/
+set URL[4]=https://maven.repository.redhat.com/ga/org/apache/karaf/karaf/4.2.0.fuse-710024-redhat-00002/
+set URL[5]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-parent/3.1.11.fuse-710022-redhat-00001/
+set URL[6]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf/3.1.11.fuse-710022-redhat-00001/
+set URL[7]=https://maven.repository.redhat.com/ga/io/fabric8/fabric8-project-bom-fuse-karaf/3.0.11.fuse-710023-redhat-00001/
+set URL[8]=https://maven.repository.redhat.com/ga/io/hawt/hawtio-bom/2.0.0.fuse-710018-redhat-00002/
+set URL[9]=https://maven.repository.redhat.com/ga/io/hawt/project/2.0.0.fuse-710018-redhat-00002/
+set URL[10]=https://maven.repository.redhat.com/ga/org/jboss/jboss-parent/26.0.0.redhat-1/
+set URL[11]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-rs-extension-providers/3.1.11.fuse-710022-redhat-00001/
+set URL[12]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-core/3.1.11.fuse-710022-redhat-00001/
+set URL[13]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-frontend-jaxrs/3.1.11.fuse-710022-redhat-00001/
+set URL[14]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-transports-http/3.1.11.fuse-710022-redhat-00001/
+set URL[15]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-transports-http-undertow/3.1.11.fuse-710022-redhat-00001/
+set URL[16]=https://maven.repository.redhat.com/ga/org/apache/ws/xmlschema/xmlschema-core/2.2.1.redhat-2/
+set URL[17]=https://maven.repository.redhat.com/ga/javax/ws/rs/javax.ws.rs-api/2.0.1.redhat-1/
+set URL[18]=https://maven.repository.redhat.com/ga/org/apache/camel/camel-core/2.21.0.fuse-710018-redhat-00001/
+set URL[19]=https://maven.repository.redhat.com/ga/org/apache/camel/camel-undertow/2.21.0.fuse-710018-redhat-00001/
+set URL[20]=https://maven.repository.redhat.com/ga/org/apache/ws/xmlschema/xmlschema/2.2.1.redhat-2/
+set URL[21]=https://maven.repository.redhat.com/ga/org/apache/apache/16.0.0.redhat-5/
+set URL[22]=https://maven.repository.redhat.com/ga/org/jboss/jboss-parent/19.0.0.redhat-1/
+set URL[23]=https://maven.repository.redhat.com/ga/org/apache/camel/components/2.21.0.fuse-710018-redhat-00001/
+set URL[24]=https://maven.repository.redhat.com/ga/org/slf4j/slf4j-api/1.7.22.redhat-2/
+set URL[25]=https://maven.repository.redhat.com/ga/org/apache/camel/camel-test-blueprint/2.21.0.fuse-710018-redhat-00001/
+set URL[26]=https://maven.repository.redhat.com/ga/org/apache/cxf/cxf-rt-frontend-jaxws/3.1.11.fuse-710022-redhat-00001/
+
+:: File extensions to download
+set EXTS=pom jar md5 sha1 sha256 sha512 xml properties txt asc
+
+:: Loop through URLs
+set i=0
+:loop
+if defined URL[%i%] (
+    echo 🔍 Checking !URL[%i%]!
+    
+    :: Get HTML content and find files
+    for /f "delims=" %%h in ('curl -s "!URL[%i%]!"') do set "html=%%h"
+    
+    :: Loop through extensions
+    for %%e in (%EXTS%) do (
+        for /f "tokens=1" %%f in ('echo !html! ^| findstr /r "[a-zA-Z0-9._-]*\.%%e"') do (
+            echo ⬇️  Downloading %%f
+            curl -s -o "%BASE_DIR%\%%f" "!URL[%i%]!%%f"
+        )
+    )
+    
+    set /a i+=1
+    goto :loop
+)
+
+echo ✅ All downloads completed. Files saved in %BASE_DIR%
+dir "%BASE_DIR%" /b | find /c /v "" > nul && echo 📁 Total files downloaded: 
+for /f %%c in ('dir "%BASE_DIR%" /b ^| find /c /v ""') do echo %%c
+
+endlocal
